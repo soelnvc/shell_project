@@ -9,6 +9,7 @@ import java.util.HashSet;
 import java.util.Scanner;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 public class Main {
     static File currentDirectory = new File(System.getProperty("user.dir")).getAbsoluteFile();
@@ -195,6 +196,19 @@ public class Main {
         }
 
         return highestJobNumber + 1;
+    }
+
+    public static boolean isJobDone(Job job) throws Exception {
+        if (!job.process.isAlive()) {
+            job.process.waitFor();
+            return true;
+        }
+
+        if (job.process.waitFor(20, TimeUnit.MILLISECONDS)) {
+            return true;
+        }
+
+        return false;
     }
 
     public static void runPipeline(List<CommandLine> pipeline, String originalInput) throws Exception {
@@ -479,8 +493,7 @@ public class Main {
         List<Job> doneJobs = new ArrayList<>();
 
         for (Job job : jobs) {
-            if (!job.process.isAlive()) {
-                job.process.waitFor();
+            if (isJobDone(job)) {
                 doneJobs.add(job);
 
                 char marker = ' ';
@@ -546,10 +559,9 @@ public class Main {
         List<Job> doneJobs = new ArrayList<>();
 
         for (Job job : jobs) {
-            boolean isDone = !job.process.isAlive();
+            boolean isDone = isJobDone(job);
 
             if (isDone) {
-                job.process.waitFor();
                 doneJobs.add(job);
             }
 
