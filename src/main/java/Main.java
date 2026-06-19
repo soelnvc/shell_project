@@ -7,7 +7,7 @@ public class Main {
     public static void main(String[] args) throws Exception {
         Scanner sc = new Scanner(System.in);
 
-        HashSet<String> commands = new HashSet<>(Arrays.asList("exit", "echo", "type"));
+        HashSet<String> commands = new HashSet<>(Arrays.asList("exit", "echo", "type", "pwd"));
 
         while (true) {
             System.out.print("$ ");
@@ -23,11 +23,11 @@ public class Main {
                 System.out.println(type(rem));
             } else if (cmd.equals("echo")) {
                 System.out.println(rem);
+            } else if (cmd.equals("pwd")) {
+                System.out.println(pwd());
             } else if (getExecutable(cmd) != null) {
                 Process process = Runtime.getRuntime().exec(input.split(" "));
                 process.getInputStream().transferTo(System.out);
-            } else if (cmd.equals("pwd")) {
-                System.out.println(pwd());
             } else {
                 System.out.println(cmd + ": command not found");
             }
