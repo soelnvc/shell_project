@@ -14,6 +14,21 @@ public class Main {
     );
 
     static int nextJobNumber = 1;
+    static List<Job> jobs = new ArrayList<>();
+
+    static class Job {
+        int jobNumber;
+        long pid;
+        String command;
+        Process process;
+
+        Job(int jobNumber, long pid, String command, Process process) {
+            this.jobNumber = jobNumber;
+            this.pid = pid;
+            this.command = command;
+            this.process = process;
+        }
+    }
 
     static class Token {
         String value;
@@ -97,7 +112,7 @@ public class Main {
                 createEmptyFileIfNeeded(stdoutRedirectFile, commandLine.stdoutAppend);
 
             } else if (cmd.equals("jobs")) {
-                createEmptyFileIfNeeded(stdoutRedirectFile, commandLine.stdoutAppend);
+                printJobs(stdoutRedirectFile, commandLine.stdoutAppend);
                 createEmptyFileIfNeeded(stderrRedirectFile, commandLine.stderrAppend);
 
             } else if (getExecutable(cmd) != null) {
@@ -128,6 +143,10 @@ public class Main {
 
                 if (commandLine.background) {
                     int jobNumber = nextJobNumber++;
+                    String commandText = input.trim();
+
+                    jobs.add(new Job(jobNumber, process.pid(), commandText, process));
+
                     System.out.println("[" + jobNumber + "] " + process.pid());
                 } else {
                     if (stdoutRedirectFile == null) {
@@ -148,6 +167,29 @@ public class Main {
         }
 
         sc.close();
+    }
+
+    public static void printJobs(File stdoutRedirectFile, boolean stdoutAppend) throws Exception {
+        StringBuilder output = new StringBuilder();
+
+        for (Job job : jobs) {
+            if (job.process.isAlive()) {
+                output.append("[")
+                        .append(job.jobNumber)
+                        .append("]+  ")
+                        .append(String.format("%-24s", "Running"))
+                        .append(job.command)
+                        .append(System.lineSeparator());
+            }
+        }
+
+        if (stdoutRedirectFile == null) {
+            System.out.print(output.toString());
+        } else {
+            FileWriter writer = new FileWriter(stdoutRedirectFile, stdoutAppend);
+            writer.write(output.toString());
+            writer.close();
+        }
     }
 
     public static CommandLine parseCommandLine(String input) {
