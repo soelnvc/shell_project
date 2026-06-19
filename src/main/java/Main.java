@@ -65,11 +65,15 @@ public class Main {
     public static void cd(String dir) throws Exception {
         File newDirectory;
 
-        if (dir.startsWith("/")) {
-            // Absolute path: /usr/local/bin
+        if (dir.equals("~")) {
+            String home = System.getenv("HOME");
+            newDirectory = new File(home);
+        } else if (dir.startsWith("~/")) {
+            String home = System.getenv("HOME");
+            newDirectory = new File(home, dir.substring(2));
+        } else if (dir.startsWith("/")) {
             newDirectory = new File(dir);
         } else {
-            // Relative path: ./, ../, ./dir, dirname
             newDirectory = new File(currentDirectory, dir);
         }
 
