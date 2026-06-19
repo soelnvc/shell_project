@@ -22,8 +22,13 @@ public class Main {
                 continue;
             }
 
-            String cmd = input.indexOf(" ") == -1 ? input : input.substring(0, input.indexOf(" "));
-            String rem = input.indexOf(" ") == -1 ? "" : input.substring(input.indexOf(" ") + 1);
+            String cmd = input.indexOf(" ") == -1
+                    ? input
+                    : input.substring(0, input.indexOf(" "));
+
+            String rem = input.indexOf(" ") == -1
+                    ? ""
+                    : input.substring(input.indexOf(" ") + 1);
 
             if (cmd.equals("exit")) {
                 break;
@@ -37,7 +42,6 @@ public class Main {
                 cd(rem);
             } else if (getExecutable(cmd) != null) {
                 String[] parts = input.split(" ");
-                parts[0] = getExecutable(cmd);
 
                 ProcessBuilder processBuilder = new ProcessBuilder(parts);
                 processBuilder.directory(currentDirectory);
@@ -78,6 +82,7 @@ public class Main {
 
         for (String dir : pathDir) {
             File file = new File(dir, cmd);
+
             if (file.exists() && file.canExecute()) {
                 return cmd + " is " + file.getAbsolutePath();
             }
@@ -92,6 +97,7 @@ public class Main {
 
         for (String dir : pathDir) {
             File file = new File(dir, cmd);
+
             if (file.exists() && file.canExecute()) {
                 return file.getAbsolutePath();
             }
