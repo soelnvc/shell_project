@@ -13,13 +13,23 @@ public class Main {
             Arrays.asList("exit", "echo", "type", "pwd", "cd", "jobs")
     );
 
+    static int nextJobNumber = 1;
+
     static class Token {
         String value;
         boolean isRedirectOperator;
+        boolean isBackgroundOperator;
 
         Token(String value, boolean isRedirectOperator) {
             this.value = value;
             this.isRedirectOperator = isRedirectOperator;
+            this.isBackgroundOperator = false;
+        }
+
+        Token(String value, boolean isRedirectOperator, boolean isBackgroundOperator) {
+            this.value = value;
+            this.isRedirectOperator = isRedirectOperator;
+            this.isBackgroundOperator = isBackgroundOperator;
         }
     }
 
@@ -31,6 +41,8 @@ public class Main {
 
         String stderrFile = null;
         boolean stderrAppend = false;
+
+        boolean background = false;
     }
 
     public static void main(String[] args) throws Exception {
@@ -85,8 +97,6 @@ public class Main {
                 createEmptyFileIfNeeded(stdoutRedirectFile, commandLine.stdoutAppend);
 
             } else if (cmd.equals("jobs")) {
-                // Empty implementation for now.
-                // When there are no background jobs, jobs should print nothing.
                 createEmptyFileIfNeeded(stdoutRedirectFile, commandLine.stdoutAppend);
                 createEmptyFileIfNeeded(stderrRedirectFile, commandLine.stderrAppend);
 
@@ -100,6 +110,8 @@ public class Main {
                     } else {
                         processBuilder.redirectOutput(stdoutRedirectFile);
                     }
+                } else if (commandLine.background) {
+                    processBuilder.redirectOutput(ProcessBuilder.Redirect.INHERIT);
                 }
 
                 if (stderrRedirectFile != null) {
@@ -108,19 +120,26 @@ public class Main {
                     } else {
                         processBuilder.redirectError(stderrRedirectFile);
                     }
+                } else if (commandLine.background) {
+                    processBuilder.redirectError(ProcessBuilder.Redirect.INHERIT);
                 }
 
                 Process process = processBuilder.start();
 
-                if (stdoutRedirectFile == null) {
-                    process.getInputStream().transferTo(System.out);
-                }
+                if (commandLine.background) {
+                    int jobNumber = nextJobNumber++;
+                    System.out.println("[" + jobNumber + "] " + process.pid());
+                } else {
+                    if (stdoutRedirectFile == null) {
+                        process.getInputStream().transferTo(System.out);
+                    }
 
-                if (stderrRedirectFile == null) {
-                    process.getErrorStream().transferTo(System.err);
-                }
+                    if (stderrRedirectFile == null) {
+                        process.getErrorStream().transferTo(System.err);
+                    }
 
-                process.waitFor();
+                    process.waitFor();
+                }
 
             } else {
                 printStderr(cmd + ": command not found", stderrRedirectFile, commandLine.stderrAppend);
@@ -136,11 +155,18 @@ public class Main {
 
         CommandLine commandLine = new CommandLine();
 
-        for (int i = 0; i < tokens.size(); i++) {
+        int end = tokens.size();
+
+        if (end > 0 && tokens.get(end - 1).isBackgroundOperator) {
+            commandLine.background = true;
+            end--;
+        }
+
+        for (int i = 0; i < end; i++) {
             Token token = tokens.get(i);
 
             if (token.isRedirectOperator) {
-                if (i + 1 < tokens.size()) {
+                if (i + 1 < end) {
                     if (token.value.equals(">") || token.value.equals("1>")) {
                         commandLine.stdoutFile = tokens.get(i + 1).value;
                         commandLine.stdoutAppend = false;
@@ -209,6 +235,15 @@ public class Main {
             } else if (ch == '"' && !insideSingleQuote) {
                 insideDoubleQuote = !insideDoubleQuote;
                 argStarted = true;
+
+            } else if (ch == '&' && !insideSingleQuote && !insideDoubleQuote) {
+                if (argStarted) {
+                    tokens.add(new Token(current.toString(), false));
+                    current.setLength(0);
+                    argStarted = false;
+                }
+
+                tokens.add(new Token("&", false, true));
 
             } else if (ch == '>' && !insideSingleQuote && !insideDoubleQuote) {
                 boolean isAppend = i + 1 < input.length() && input.charAt(i + 1) == '>';
