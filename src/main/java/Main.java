@@ -62,11 +62,19 @@ public class Main {
         return currentDirectory.getAbsolutePath();
     }
 
-    public static void cd(String dir) {
-        File newDirectory = new File(dir);
+    public static void cd(String dir) throws Exception {
+        File newDirectory;
+
+        if (dir.startsWith("/")) {
+            // Absolute path: /usr/local/bin
+            newDirectory = new File(dir);
+        } else {
+            // Relative path: ./, ../, ./dir, dirname
+            newDirectory = new File(currentDirectory, dir);
+        }
 
         if (newDirectory.exists() && newDirectory.isDirectory()) {
-            currentDirectory = newDirectory.getAbsoluteFile();
+            currentDirectory = newDirectory.getCanonicalFile();
         } else {
             System.out.println("cd: " + dir + ": No such file or directory");
         }
