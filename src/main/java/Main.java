@@ -124,8 +124,7 @@ public class Main {
                 createEmptyFileIfNeeded(stdoutRedirectFile, commandLine.stdoutAppend);
 
             } else if (cmd.equals("jobs")) {
-                reapCompletedJobs(stdoutRedirectFile, commandLine.stdoutAppend);
-                printJobs(stdoutRedirectFile, true);
+                printJobsAndReap(stdoutRedirectFile, commandLine.stdoutAppend);
                 createEmptyFileIfNeeded(stderrRedirectFile, commandLine.stderrAppend);
 
             } else if (getExecutable(cmd) != null) {
@@ -362,7 +361,7 @@ public class Main {
         }
     }
 
-    public static void printJobs(File stdoutRedirectFile, boolean stdoutAppend) throws Exception {
+    public static void printJobsAndReap(File stdoutRedirectFile, boolean stdoutAppend) throws Exception {
         StringBuilder output = new StringBuilder();
 
         int currentJobNumber = -1;
@@ -376,26 +375,38 @@ public class Main {
             previousJobNumber = jobs.get(jobs.size() - 2).jobNumber;
         }
 
+        List<Job> doneJobs = new ArrayList<>();
+
         for (Job job : jobs) {
-            if (job.process.isAlive()) {
-                char marker = ' ';
+            boolean isDone = !job.process.isAlive();
 
-                if (job.jobNumber == currentJobNumber) {
-                    marker = '+';
-                } else if (job.jobNumber == previousJobNumber) {
-                    marker = '-';
-                }
-
-                output.append("[")
-                        .append(job.jobNumber)
-                        .append("]")
-                        .append(marker)
-                        .append("  ")
-                        .append(String.format("%-24s", "Running"))
-                        .append(job.command)
-                        .append(System.lineSeparator());
+            if (isDone) {
+                job.process.waitFor();
+                doneJobs.add(job);
             }
+
+            char marker = ' ';
+
+            if (job.jobNumber == currentJobNumber) {
+                marker = '+';
+            } else if (job.jobNumber == previousJobNumber) {
+                marker = '-';
+            }
+
+            String status = isDone ? "Done" : "Running";
+            String command = isDone ? removeTrailingAmpersand(job.command) : job.command;
+
+            output.append("[")
+                    .append(job.jobNumber)
+                    .append("]")
+                    .append(marker)
+                    .append("  ")
+                    .append(String.format("%-24s", status))
+                    .append(command)
+                    .append(System.lineSeparator());
         }
+
+        jobs.removeAll(doneJobs);
 
         if (stdoutRedirectFile == null) {
             System.out.print(output.toString());
