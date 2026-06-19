@@ -9,6 +9,7 @@ public class Main {
     static HashSet<String> commands = new HashSet<>(
             Arrays.asList("exit", "echo", "type", "pwd", "cd")
     );
+
     public static void main(String[] args) throws Exception {
         Scanner sc = new Scanner(System.in);
 
@@ -35,39 +36,51 @@ public class Main {
             } else if (cmd.equals("cd")) {
                 cd(rem);
             } else if (getExecutable(cmd) != null) {
-                Process process = Runtime.getRuntime().exec(input.split(" "));
+                String[] parts = input.split(" ");
+                parts[0] = getExecutable(cmd);
+
+                ProcessBuilder processBuilder = new ProcessBuilder(parts);
+                processBuilder.directory(currentDirectory);
+                processBuilder.redirectErrorStream(true);
+
+                Process process = processBuilder.start();
                 process.getInputStream().transferTo(System.out);
+                process.waitFor();
             } else {
                 System.out.println(cmd + ": command not found");
             }
         }
+
+        sc.close();
     }
 
     public static String pwd() {
-        return System.getProperty("user.dir");
+        return currentDirectory.getAbsolutePath();
     }
 
-    public static void cd(String dir) throws Exception {
+    public static void cd(String dir) {
         File newDirectory = new File(dir);
 
         if (newDirectory.exists() && newDirectory.isDirectory()) {
-            currentDirectory = newDirectory.getCanonicalFile();
+            currentDirectory = newDirectory.getAbsoluteFile();
         } else {
             System.out.println("cd: " + dir + ": No such file or directory");
         }
     }
 
     public static String type(String cmd) {
-        HashSet<String> commands = new HashSet<>(Arrays.asList("exit", "echo", "type", "pwd"));
+        if (commands.contains(cmd)) {
+            return cmd + " is a shell builtin";
+        }
 
         String path = System.getenv("PATH");
         String[] pathDir = path.split(":");
 
-        if (commands.contains(cmd)) return cmd + " is a shell builtin";
-
         for (String dir : pathDir) {
             File file = new File(dir, cmd);
-            if (file.exists() && file.canExecute()) return cmd + " is " + file.getAbsolutePath();
+            if (file.exists() && file.canExecute()) {
+                return cmd + " is " + file.getAbsolutePath();
+            }
         }
 
         return cmd + ": not found";
@@ -79,7 +92,9 @@ public class Main {
 
         for (String dir : pathDir) {
             File file = new File(dir, cmd);
-            if (file.exists() && file.canExecute()) return file.getAbsolutePath();
+            if (file.exists() && file.canExecute()) {
+                return file.getAbsolutePath();
+            }
         }
 
         return null;
