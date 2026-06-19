@@ -10,7 +10,7 @@ public class Main {
     static File currentDirectory = new File(System.getProperty("user.dir")).getAbsoluteFile();
 
     static HashSet<String> commands = new HashSet<>(
-            Arrays.asList("exit", "echo", "type", "pwd", "cd")
+            Arrays.asList("exit", "echo", "type", "pwd", "cd", "jobs")
     );
 
     static class Token {
@@ -59,6 +59,7 @@ public class Main {
 
             if (cmd.equals("exit")) {
                 break;
+
             } else if (cmd.equals("type")) {
                 String arg = commandLine.args.size() > 1 ? commandLine.args.get(1) : "";
                 printStdout(type(arg), stdoutRedirectFile, commandLine.stdoutAppend);
@@ -82,6 +83,12 @@ public class Main {
                 String arg = commandLine.args.size() > 1 ? commandLine.args.get(1) : "";
                 cd(arg, stderrRedirectFile, commandLine.stderrAppend);
                 createEmptyFileIfNeeded(stdoutRedirectFile, commandLine.stdoutAppend);
+
+            } else if (cmd.equals("jobs")) {
+                // Empty implementation for now.
+                // When there are no background jobs, jobs should print nothing.
+                createEmptyFileIfNeeded(stdoutRedirectFile, commandLine.stdoutAppend);
+                createEmptyFileIfNeeded(stderrRedirectFile, commandLine.stderrAppend);
 
             } else if (getExecutable(cmd) != null) {
                 ProcessBuilder processBuilder = new ProcessBuilder(commandLine.args);
