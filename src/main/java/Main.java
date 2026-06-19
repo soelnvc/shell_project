@@ -375,7 +375,7 @@ public class Main {
             cd(arg, stderrRedirectFile, commandLine.stderrAppend);
 
         } else if (cmd.equals("exit")) {
-            // Do nothing inside a pipeline for this stage.
+            // No-op inside pipeline for this challenge stage.
         }
 
         return output.getBytes(StandardCharsets.UTF_8);
