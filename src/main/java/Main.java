@@ -25,9 +25,12 @@ public class Main {
 
     static class CommandLine {
         List<String> args = new ArrayList<>();
+
         String stdoutFile = null;
-        String stderrFile = null;
         boolean stdoutAppend = false;
+
+        String stderrFile = null;
+        boolean stderrAppend = false;
     }
 
     public static void main(String[] args) throws Exception {
@@ -59,7 +62,8 @@ public class Main {
             } else if (cmd.equals("type")) {
                 String arg = commandLine.args.size() > 1 ? commandLine.args.get(1) : "";
                 printStdout(type(arg), stdoutRedirectFile, commandLine.stdoutAppend);
-                createEmptyFileIfNeeded(stderrRedirectFile, false);
+                createEmptyFileIfNeeded(stderrRedirectFile, commandLine.stderrAppend);
+
             } else if (cmd.equals("echo")) {
                 String output = "";
 
@@ -68,14 +72,17 @@ public class Main {
                 }
 
                 printStdout(output, stdoutRedirectFile, commandLine.stdoutAppend);
-                createEmptyFileIfNeeded(stderrRedirectFile, false);
+                createEmptyFileIfNeeded(stderrRedirectFile, commandLine.stderrAppend);
+
             } else if (cmd.equals("pwd")) {
                 printStdout(pwd(), stdoutRedirectFile, commandLine.stdoutAppend);
-                createEmptyFileIfNeeded(stderrRedirectFile, false);
+                createEmptyFileIfNeeded(stderrRedirectFile, commandLine.stderrAppend);
+
             } else if (cmd.equals("cd")) {
                 String arg = commandLine.args.size() > 1 ? commandLine.args.get(1) : "";
-                cd(arg, stderrRedirectFile);
+                cd(arg, stderrRedirectFile, commandLine.stderrAppend);
                 createEmptyFileIfNeeded(stdoutRedirectFile, commandLine.stdoutAppend);
+
             } else if (getExecutable(cmd) != null) {
                 ProcessBuilder processBuilder = new ProcessBuilder(commandLine.args);
                 processBuilder.directory(currentDirectory);
@@ -89,7 +96,11 @@ public class Main {
                 }
 
                 if (stderrRedirectFile != null) {
-                    processBuilder.redirectError(stderrRedirectFile);
+                    if (commandLine.stderrAppend) {
+                        processBuilder.redirectError(ProcessBuilder.Redirect.appendTo(stderrRedirectFile));
+                    } else {
+                        processBuilder.redirectError(stderrRedirectFile);
+                    }
                 }
 
                 Process process = processBuilder.start();
@@ -103,8 +114,9 @@ public class Main {
                 }
 
                 process.waitFor();
+
             } else {
-                printStderr(cmd + ": command not found", stderrRedirectFile);
+                printStderr(cmd + ": command not found", stderrRedirectFile, commandLine.stderrAppend);
                 createEmptyFileIfNeeded(stdoutRedirectFile, commandLine.stdoutAppend);
             }
         }
@@ -130,6 +142,10 @@ public class Main {
                         commandLine.stdoutAppend = true;
                     } else if (token.value.equals("2>")) {
                         commandLine.stderrFile = tokens.get(i + 1).value;
+                        commandLine.stderrAppend = false;
+                    } else if (token.value.equals("2>>")) {
+                        commandLine.stderrFile = tokens.get(i + 1).value;
+                        commandLine.stderrAppend = true;
                     }
 
                     i++;
@@ -168,6 +184,7 @@ public class Main {
                 }
 
                 argStarted = true;
+
             } else if (ch == '\\' && !insideSingleQuote && !insideDoubleQuote) {
                 if (i + 1 < input.length()) {
                     current.append(input.charAt(i + 1));
@@ -177,12 +194,15 @@ public class Main {
                 }
 
                 argStarted = true;
+
             } else if (ch == '\'' && !insideDoubleQuote) {
                 insideSingleQuote = !insideSingleQuote;
                 argStarted = true;
+
             } else if (ch == '"' && !insideSingleQuote) {
                 insideDoubleQuote = !insideDoubleQuote;
                 argStarted = true;
+
             } else if (ch == '>' && !insideSingleQuote && !insideDoubleQuote) {
                 boolean isAppend = i + 1 < input.length() && input.charAt(i + 1) == '>';
 
@@ -196,10 +216,18 @@ public class Main {
                     } else {
                         tokens.add(new Token("1>", true));
                     }
+
                 } else if (argStarted && current.toString().equals("2")) {
                     current.setLength(0);
                     argStarted = false;
-                    tokens.add(new Token("2>", true));
+
+                    if (isAppend) {
+                        tokens.add(new Token("2>>", true));
+                        i++;
+                    } else {
+                        tokens.add(new Token("2>", true));
+                    }
+
                 } else {
                     if (argStarted) {
                         tokens.add(new Token(current.toString(), false));
@@ -214,12 +242,14 @@ public class Main {
                         tokens.add(new Token(">", true));
                     }
                 }
+
             } else if (Character.isWhitespace(ch) && !insideSingleQuote && !insideDoubleQuote) {
                 if (argStarted) {
                     tokens.add(new Token(current.toString(), false));
                     current.setLength(0);
                     argStarted = false;
                 }
+
             } else {
                 current.append(ch);
                 argStarted = true;
@@ -244,11 +274,11 @@ public class Main {
         }
     }
 
-    public static void printStderr(String text, File redirectFile) throws Exception {
+    public static void printStderr(String text, File redirectFile, boolean append) throws Exception {
         if (redirectFile == null) {
             System.err.println(text);
         } else {
-            FileWriter writer = new FileWriter(redirectFile, false);
+            FileWriter writer = new FileWriter(redirectFile, append);
             writer.write(text);
             writer.write(System.lineSeparator());
             writer.close();
@@ -274,7 +304,7 @@ public class Main {
         return currentDirectory.getAbsolutePath();
     }
 
-    public static void cd(String dir, File stderrRedirectFile) throws Exception {
+    public static void cd(String dir, File stderrRedirectFile, boolean stderrAppend) throws Exception {
         File newDirectory;
 
         if (dir.equals("~")) {
@@ -292,7 +322,7 @@ public class Main {
         if (newDirectory.exists() && newDirectory.isDirectory()) {
             currentDirectory = newDirectory.getCanonicalFile();
         } else {
-            printStderr("cd: " + dir + ": No such file or directory", stderrRedirectFile);
+            printStderr("cd: " + dir + ": No such file or directory", stderrRedirectFile, stderrAppend);
         }
     }
 
