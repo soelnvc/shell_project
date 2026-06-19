@@ -1,112 +1,62 @@
 import java.io.File;
-import java.util.ArrayList;
-import java.util.List;
+import java.util.Arrays;
+import java.util.HashSet;
 import java.util.Scanner;
 
 public class Main {
     public static void main(String[] args) throws Exception {
         Scanner sc = new Scanner(System.in);
-        String path = System.getenv("PATH");
-        String[] pathDirs = path.split(":");
+
+        HashSet<String> commands = new HashSet<>(Arrays.asList("exit", "echo", "type"));
 
         while (true) {
             System.out.print("$ ");
-            String command = sc.nextLine();
 
-            if (command.equals("exit")) {
+            String input = sc.nextLine();
+
+            String cmd = input.indexOf(" ") == -1 ? input : input.substring(0, input.indexOf(" "));
+            String rem = input.indexOf(" ") == -1 ? "" : input.substring(input.indexOf(" ") + 1);
+
+            if (cmd.equals("exit")) {
                 break;
-            } else if (command.startsWith("echo")) {
-                String[] parts = command.trim().split("\\s+");
-                if (parts.length <= 1) {
-                    System.out.println();
-                } else {
-                    for (int i = 1; i < parts.length; i++) {
-                        if (i > 1) System.out.print(" ");
-                        System.out.print(parts[i]);
-                    }
-                    System.out.println();
-                }
-            } else if (command.startsWith("type")) {
-                String typeArg = command.substring(5);
-                System.out.println(type(typeArg));
+            } else if (cmd.equals("type")) {
+                System.out.println(type(rem));
+            } else if (cmd.equals("echo")) {
+                System.out.println(rem);
+            } else if (getExecutable(cmd) != null) {
+                Process process = Runtime.getRuntime().exec(input.split(" "));
+                process.getInputStream().transferTo(System.out);
             } else {
-                System.out.println(command + ": command not found");
+                System.out.println(cmd + ": command not found");
             }
         }
-
-        sc.close();
     }
 
-    public static String type(String command) {
-        String[] commands = {"exit", "echo", "type"};
+    public static String type(String cmd) {
+        HashSet<String> commands = new HashSet<>(Arrays.asList("exit", "echo", "type"));
+
         String path = System.getenv("PATH");
-        String[] pathDirs = path.split(":");
+        String[] pathDir = path.split(":");
 
-        boolean isBuiltIn = false;
-        for (int i = 0; i < commands.length; i++) {
-            if (commands[i].equals(command)) {
-                return command + " is a shell builtin";
-            }
+        if (commands.contains(cmd)) return cmd + " is a shell builtin";
+
+        for (String dir : pathDir) {
+            File file = new File(dir, cmd);
+            if (file.exists() && file.canExecute()) return cmd + " is " + file.getAbsolutePath();
         }
 
-        for (int i = 0; i < pathDirs.length; i++) {
-            File file = new File(pathDirs[i], command);
-            if (file.exists() && file.canExecute()) {
-                return command + " is " + file.getAbsolutePath();
-            }
-        }
-
-        return command + ": not found";
+        return cmd + ": not found";
     }
 
-    public static boolean isBuiltin(String command) {
-        return command.equals("exit") ||
-               command.equals("echo") ||
-               command.equals("type");
-    }
-    public static void runExternalProgram(String input) {
-        try {
-            String[] parts = input.split("\\s+");
-            String commandName = parts[0];
-
-            String executablePath = findExecutableInPath(commandName);
-
-            if (executablePath == null) {
-                System.out.println(commandName + ": command not found");
-                return;
-            }
-
-            List<String> commandWithArgs = new ArrayList<>();
-            commandWithArgs.add(executablePath);
-
-            for (int i = 1; i < parts.length; i++) {
-                commandWithArgs.add(parts[i]);
-            }
-
-            ProcessBuilder processBuilder = new ProcessBuilder(commandWithArgs);
-
-            processBuilder.redirectInput(ProcessBuilder.Redirect.INHERIT);
-            processBuilder.redirectOutput(ProcessBuilder.Redirect.INHERIT);
-            processBuilder.redirectError(ProcessBuilder.Redirect.INHERIT);
-
-            Process process = processBuilder.start();
-            process.waitFor();
-
-        } catch (Exception e) {
-            System.out.println(input + ": command not found");
-        }
-    }
-
-    public static String findExecutableInPath(String command) {
+    public static String getExecutable(String cmd) {
         String path = System.getenv("PATH");
-        if (path == null) return null;
-        String[] pathDirs = path.split(":");
-        for (String dir : pathDirs) {
-            File file = new File(dir, command);
-            if (file.exists() && file.canExecute()) {
-                return file.getAbsolutePath();
-            }
+        String[] pathDir = path.split(":");
+
+        for (String dir : pathDir) {
+            File file = new File(dir, cmd);
+            if (file.exists() && file.canExecute()) return file.getAbsolutePath();
         }
+
         return null;
     }
 }
