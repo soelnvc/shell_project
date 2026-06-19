@@ -27,6 +27,7 @@ public class Main {
         List<String> args = new ArrayList<>();
         String stdoutFile = null;
         String stderrFile = null;
+        boolean stdoutAppend = false;
     }
 
     public static void main(String[] args) throws Exception {
@@ -57,8 +58,8 @@ public class Main {
                 break;
             } else if (cmd.equals("type")) {
                 String arg = commandLine.args.size() > 1 ? commandLine.args.get(1) : "";
-                printStdout(type(arg), stdoutRedirectFile);
-                createEmptyFileIfNeeded(stderrRedirectFile);
+                printStdout(type(arg), stdoutRedirectFile, commandLine.stdoutAppend);
+                createEmptyFileIfNeeded(stderrRedirectFile, false);
             } else if (cmd.equals("echo")) {
                 String output = "";
 
@@ -66,21 +67,25 @@ public class Main {
                     output = String.join(" ", commandLine.args.subList(1, commandLine.args.size()));
                 }
 
-                printStdout(output, stdoutRedirectFile);
-                createEmptyFileIfNeeded(stderrRedirectFile);
+                printStdout(output, stdoutRedirectFile, commandLine.stdoutAppend);
+                createEmptyFileIfNeeded(stderrRedirectFile, false);
             } else if (cmd.equals("pwd")) {
-                printStdout(pwd(), stdoutRedirectFile);
-                createEmptyFileIfNeeded(stderrRedirectFile);
+                printStdout(pwd(), stdoutRedirectFile, commandLine.stdoutAppend);
+                createEmptyFileIfNeeded(stderrRedirectFile, false);
             } else if (cmd.equals("cd")) {
                 String arg = commandLine.args.size() > 1 ? commandLine.args.get(1) : "";
                 cd(arg, stderrRedirectFile);
-                createEmptyFileIfNeeded(stdoutRedirectFile);
+                createEmptyFileIfNeeded(stdoutRedirectFile, commandLine.stdoutAppend);
             } else if (getExecutable(cmd) != null) {
                 ProcessBuilder processBuilder = new ProcessBuilder(commandLine.args);
                 processBuilder.directory(currentDirectory);
 
                 if (stdoutRedirectFile != null) {
-                    processBuilder.redirectOutput(stdoutRedirectFile);
+                    if (commandLine.stdoutAppend) {
+                        processBuilder.redirectOutput(ProcessBuilder.Redirect.appendTo(stdoutRedirectFile));
+                    } else {
+                        processBuilder.redirectOutput(stdoutRedirectFile);
+                    }
                 }
 
                 if (stderrRedirectFile != null) {
@@ -100,7 +105,7 @@ public class Main {
                 process.waitFor();
             } else {
                 printStderr(cmd + ": command not found", stderrRedirectFile);
-                createEmptyFileIfNeeded(stdoutRedirectFile);
+                createEmptyFileIfNeeded(stdoutRedirectFile, commandLine.stdoutAppend);
             }
         }
 
@@ -119,6 +124,10 @@ public class Main {
                 if (i + 1 < tokens.size()) {
                     if (token.value.equals(">") || token.value.equals("1>")) {
                         commandLine.stdoutFile = tokens.get(i + 1).value;
+                        commandLine.stdoutAppend = false;
+                    } else if (token.value.equals(">>") || token.value.equals("1>>")) {
+                        commandLine.stdoutFile = tokens.get(i + 1).value;
+                        commandLine.stdoutAppend = true;
                     } else if (token.value.equals("2>")) {
                         commandLine.stderrFile = tokens.get(i + 1).value;
                     }
@@ -175,10 +184,18 @@ public class Main {
                 insideDoubleQuote = !insideDoubleQuote;
                 argStarted = true;
             } else if (ch == '>' && !insideSingleQuote && !insideDoubleQuote) {
+                boolean isAppend = i + 1 < input.length() && input.charAt(i + 1) == '>';
+
                 if (argStarted && current.toString().equals("1")) {
                     current.setLength(0);
                     argStarted = false;
-                    tokens.add(new Token("1>", true));
+
+                    if (isAppend) {
+                        tokens.add(new Token("1>>", true));
+                        i++;
+                    } else {
+                        tokens.add(new Token("1>", true));
+                    }
                 } else if (argStarted && current.toString().equals("2")) {
                     current.setLength(0);
                     argStarted = false;
@@ -190,7 +207,12 @@ public class Main {
                         argStarted = false;
                     }
 
-                    tokens.add(new Token(">", true));
+                    if (isAppend) {
+                        tokens.add(new Token(">>", true));
+                        i++;
+                    } else {
+                        tokens.add(new Token(">", true));
+                    }
                 }
             } else if (Character.isWhitespace(ch) && !insideSingleQuote && !insideDoubleQuote) {
                 if (argStarted) {
@@ -211,11 +233,11 @@ public class Main {
         return tokens;
     }
 
-    public static void printStdout(String text, File redirectFile) throws Exception {
+    public static void printStdout(String text, File redirectFile, boolean append) throws Exception {
         if (redirectFile == null) {
             System.out.println(text);
         } else {
-            FileWriter writer = new FileWriter(redirectFile, false);
+            FileWriter writer = new FileWriter(redirectFile, append);
             writer.write(text);
             writer.write(System.lineSeparator());
             writer.close();
@@ -233,9 +255,9 @@ public class Main {
         }
     }
 
-    public static void createEmptyFileIfNeeded(File file) throws Exception {
+    public static void createEmptyFileIfNeeded(File file, boolean append) throws Exception {
         if (file != null) {
-            FileWriter writer = new FileWriter(file, false);
+            FileWriter writer = new FileWriter(file, append);
             writer.close();
         }
     }
