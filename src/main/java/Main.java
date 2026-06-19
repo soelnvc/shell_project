@@ -5,6 +5,7 @@ import java.util.HashSet;
 import java.util.Scanner;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Iterator;
 
 public class Main {
     static File currentDirectory = new File(System.getProperty("user.dir")).getAbsoluteFile();
@@ -172,26 +173,33 @@ public class Main {
     public static void printJobs(File stdoutRedirectFile, boolean stdoutAppend) throws Exception {
         StringBuilder output = new StringBuilder();
 
-        List<Job> runningJobs = new ArrayList<>();
+        List<Job> visibleJobs = new ArrayList<>();
 
         for (Job job : jobs) {
-            if (job.process.isAlive()) {
-                runningJobs.add(job);
-            }
+            visibleJobs.add(job);
         }
 
         int currentJobNumber = -1;
         int previousJobNumber = -1;
 
-        if (runningJobs.size() >= 1) {
-            currentJobNumber = runningJobs.get(runningJobs.size() - 1).jobNumber;
+        if (visibleJobs.size() >= 1) {
+            currentJobNumber = visibleJobs.get(visibleJobs.size() - 1).jobNumber;
         }
 
-        if (runningJobs.size() >= 2) {
-            previousJobNumber = runningJobs.get(runningJobs.size() - 2).jobNumber;
+        if (visibleJobs.size() >= 2) {
+            previousJobNumber = visibleJobs.get(visibleJobs.size() - 2).jobNumber;
         }
 
-        for (Job job : runningJobs) {
+        List<Job> doneJobs = new ArrayList<>();
+
+        for (Job job : visibleJobs) {
+            boolean isDone = !job.process.isAlive();
+
+            if (isDone) {
+                job.process.waitFor(); // reap the finished process
+                doneJobs.add(job);
+            }
+
             char marker = ' ';
 
             if (job.jobNumber == currentJobNumber) {
@@ -200,15 +208,20 @@ public class Main {
                 marker = '-';
             }
 
+            String status = isDone ? "Done" : "Running";
+            String command = isDone ? removeTrailingAmpersand(job.command) : job.command;
+
             output.append("[")
                     .append(job.jobNumber)
                     .append("]")
                     .append(marker)
                     .append("  ")
-                    .append(String.format("%-24s", "Running"))
-                    .append(job.command)
+                    .append(String.format("%-24s", status))
+                    .append(command)
                     .append(System.lineSeparator());
         }
+
+        jobs.removeAll(doneJobs);
 
         if (stdoutRedirectFile == null) {
             System.out.print(output.toString());
@@ -217,6 +230,16 @@ public class Main {
             writer.write(output.toString());
             writer.close();
         }
+    }
+
+    public static String removeTrailingAmpersand(String command) {
+        String trimmed = command.trim();
+
+        if (trimmed.endsWith("&")) {
+            return trimmed.substring(0, trimmed.length() - 1).trim();
+        }
+
+        return trimmed;
     }
 
     public static CommandLine parseCommandLine(String input) {
