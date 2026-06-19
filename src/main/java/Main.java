@@ -1,7 +1,9 @@
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileWriter;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Scanner;
@@ -196,6 +198,11 @@ public class Main {
     }
 
     public static void runPipeline(List<CommandLine> pipeline, String originalInput) throws Exception {
+        if (pipelineContainsBuiltin(pipeline)) {
+            runPipelineWithBuiltins(pipeline);
+            return;
+        }
+
         List<ProcessBuilder> builders = new ArrayList<>();
 
         boolean background = pipeline.get(pipeline.size() - 1).background;
@@ -209,7 +216,7 @@ public class Main {
 
             String cmd = commandLine.args.get(0);
 
-            if (getExecutable(cmd) == null && !commands.contains(cmd)) {
+            if (getExecutable(cmd) == null) {
                 printStderr(cmd + ": command not found", null, false);
                 return;
             }
@@ -294,6 +301,155 @@ public class Main {
         }
     }
 
+    public static boolean pipelineContainsBuiltin(List<CommandLine> pipeline) {
+        for (CommandLine commandLine : pipeline) {
+            if (!commandLine.args.isEmpty() && commands.contains(commandLine.args.get(0))) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    public static void runPipelineWithBuiltins(List<CommandLine> pipeline) throws Exception {
+        byte[] currentInput = new byte[0];
+
+        for (int i = 0; i < pipeline.size(); i++) {
+            CommandLine commandLine = pipeline.get(i);
+
+            if (commandLine.args.isEmpty()) {
+                return;
+            }
+
+            String cmd = commandLine.args.get(0);
+            boolean isLastCommand = i == pipeline.size() - 1;
+
+            if (commands.contains(cmd)) {
+                currentInput = runBuiltinForPipeline(commandLine, currentInput);
+            } else {
+                currentInput = runExternalAndCapture(commandLine, currentInput);
+            }
+
+            if (isLastCommand) {
+                File stdoutRedirectFile = commandLine.stdoutFile == null
+                        ? null
+                        : resolvePath(commandLine.stdoutFile);
+
+                if (stdoutRedirectFile == null) {
+                    System.out.write(currentInput);
+                    System.out.flush();
+                } else {
+                    writeBytesToFile(stdoutRedirectFile, currentInput, commandLine.stdoutAppend);
+                }
+            }
+        }
+    }
+
+    public static byte[] runBuiltinForPipeline(CommandLine commandLine, byte[] input) throws Exception {
+        String cmd = commandLine.args.get(0);
+        String output = "";
+
+        if (cmd.equals("echo")) {
+            if (commandLine.args.size() > 1) {
+                output = String.join(" ", commandLine.args.subList(1, commandLine.args.size()));
+            }
+
+            output += System.lineSeparator();
+
+        } else if (cmd.equals("type")) {
+            String arg = commandLine.args.size() > 1 ? commandLine.args.get(1) : "";
+            output = type(arg) + System.lineSeparator();
+
+        } else if (cmd.equals("pwd")) {
+            output = pwd() + System.lineSeparator();
+
+        } else if (cmd.equals("jobs")) {
+            output = buildJobsAndReapOutput();
+
+        } else if (cmd.equals("cd")) {
+            String arg = commandLine.args.size() > 1 ? commandLine.args.get(1) : "";
+            File stderrRedirectFile = commandLine.stderrFile == null
+                    ? null
+                    : resolvePath(commandLine.stderrFile);
+
+            cd(arg, stderrRedirectFile, commandLine.stderrAppend);
+
+        } else if (cmd.equals("exit")) {
+            // Do nothing inside a pipeline for this stage.
+        }
+
+        return output.getBytes(StandardCharsets.UTF_8);
+    }
+
+    public static byte[] runExternalAndCapture(CommandLine commandLine, byte[] input) throws Exception {
+        String cmd = commandLine.args.get(0);
+
+        if (getExecutable(cmd) == null) {
+            printStderr(cmd + ": command not found", null, false);
+            return new byte[0];
+        }
+
+        ProcessBuilder processBuilder = new ProcessBuilder(commandLine.args);
+        processBuilder.directory(currentDirectory);
+
+        File stderrRedirectFile = commandLine.stderrFile == null
+                ? null
+                : resolvePath(commandLine.stderrFile);
+
+        if (stderrRedirectFile != null) {
+            if (commandLine.stderrAppend) {
+                processBuilder.redirectError(ProcessBuilder.Redirect.appendTo(stderrRedirectFile));
+            } else {
+                processBuilder.redirectError(stderrRedirectFile);
+            }
+        }
+
+        Process process = processBuilder.start();
+
+        Thread inputThread = new Thread(() -> {
+            try {
+                process.getOutputStream().write(input);
+                process.getOutputStream().close();
+            } catch (Exception ignored) {
+            }
+        });
+
+        ByteArrayOutputStream stdoutBuffer = new ByteArrayOutputStream();
+
+        Thread outputThread = new Thread(() -> {
+            try {
+                process.getInputStream().transferTo(stdoutBuffer);
+            } catch (Exception ignored) {
+            }
+        });
+
+        Thread errorThread = null;
+
+        if (stderrRedirectFile == null) {
+            errorThread = transferAsync(process.getErrorStream(), System.err);
+        }
+
+        inputThread.start();
+        outputThread.start();
+
+        process.waitFor();
+
+        inputThread.join();
+        outputThread.join();
+
+        if (errorThread != null) {
+            errorThread.join();
+        }
+
+        return stdoutBuffer.toByteArray();
+    }
+
+    public static void writeBytesToFile(File file, byte[] data, boolean append) throws Exception {
+        OutputStream outputStream = new java.io.FileOutputStream(file, append);
+        outputStream.write(data);
+        outputStream.close();
+    }
+
     public static Thread transferAsync(InputStream inputStream, OutputStream outputStream) {
         Thread thread = new Thread(() -> {
             try {
@@ -362,6 +518,18 @@ public class Main {
     }
 
     public static void printJobsAndReap(File stdoutRedirectFile, boolean stdoutAppend) throws Exception {
+        String output = buildJobsAndReapOutput();
+
+        if (stdoutRedirectFile == null) {
+            System.out.print(output);
+        } else {
+            FileWriter writer = new FileWriter(stdoutRedirectFile, stdoutAppend);
+            writer.write(output);
+            writer.close();
+        }
+    }
+
+    public static String buildJobsAndReapOutput() throws Exception {
         StringBuilder output = new StringBuilder();
 
         int currentJobNumber = -1;
@@ -408,13 +576,7 @@ public class Main {
 
         jobs.removeAll(doneJobs);
 
-        if (stdoutRedirectFile == null) {
-            System.out.print(output.toString());
-        } else {
-            FileWriter writer = new FileWriter(stdoutRedirectFile, stdoutAppend);
-            writer.write(output.toString());
-            writer.close();
-        }
+        return output.toString();
     }
 
     public static String removeTrailingAmpersand(String command) {
