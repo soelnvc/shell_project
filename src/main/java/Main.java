@@ -172,15 +172,42 @@ public class Main {
     public static void printJobs(File stdoutRedirectFile, boolean stdoutAppend) throws Exception {
         StringBuilder output = new StringBuilder();
 
+        List<Job> runningJobs = new ArrayList<>();
+
         for (Job job : jobs) {
             if (job.process.isAlive()) {
-                output.append("[")
-                        .append(job.jobNumber)
-                        .append("]+  ")
-                        .append(String.format("%-24s", "Running"))
-                        .append(job.command)
-                        .append(System.lineSeparator());
+                runningJobs.add(job);
             }
+        }
+
+        int currentJobNumber = -1;
+        int previousJobNumber = -1;
+
+        if (runningJobs.size() >= 1) {
+            currentJobNumber = runningJobs.get(runningJobs.size() - 1).jobNumber;
+        }
+
+        if (runningJobs.size() >= 2) {
+            previousJobNumber = runningJobs.get(runningJobs.size() - 2).jobNumber;
+        }
+
+        for (Job job : runningJobs) {
+            char marker = ' ';
+
+            if (job.jobNumber == currentJobNumber) {
+                marker = '+';
+            } else if (job.jobNumber == previousJobNumber) {
+                marker = '-';
+            }
+
+            output.append("[")
+                    .append(job.jobNumber)
+                    .append("]")
+                    .append(marker)
+                    .append("  ")
+                    .append(String.format("%-24s", "Running"))
+                    .append(job.command)
+                    .append(System.lineSeparator());
         }
 
         if (stdoutRedirectFile == null) {
