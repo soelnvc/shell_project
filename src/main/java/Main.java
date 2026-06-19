@@ -4,6 +4,11 @@ import java.util.HashSet;
 import java.util.Scanner;
 
 public class Main {
+    static File currentDirectory = new File(System.getProperty("user.dir")).getAbsoluteFile();
+
+    static HashSet<String> commands = new HashSet<>(
+            Arrays.asList("exit", "echo", "type", "pwd", "cd")
+    );
     public static void main(String[] args) throws Exception {
         Scanner sc = new Scanner(System.in);
 
@@ -11,6 +16,10 @@ public class Main {
             System.out.print("$ ");
 
             String input = sc.nextLine();
+
+            if (input.trim().isEmpty()) {
+                continue;
+            }
 
             String cmd = input.indexOf(" ") == -1 ? input : input.substring(0, input.indexOf(" "));
             String rem = input.indexOf(" ") == -1 ? "" : input.substring(input.indexOf(" ") + 1);
@@ -23,6 +32,8 @@ public class Main {
                 System.out.println(rem);
             } else if (cmd.equals("pwd")) {
                 System.out.println(pwd());
+            } else if (cmd.equals("cd")) {
+                cd(rem);
             } else if (getExecutable(cmd) != null) {
                 Process process = Runtime.getRuntime().exec(input.split(" "));
                 process.getInputStream().transferTo(System.out);
@@ -34,6 +45,16 @@ public class Main {
 
     public static String pwd() {
         return System.getProperty("user.dir");
+    }
+
+    public static void cd(String dir) throws Exception {
+        File newDirectory = new File(dir);
+
+        if (newDirectory.exists() && newDirectory.isDirectory()) {
+            currentDirectory = newDirectory.getCanonicalFile();
+        } else {
+            System.out.println("cd: " + dir + ": No such file or directory");
+        }
     }
 
     public static String type(String cmd) {
