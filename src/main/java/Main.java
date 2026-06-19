@@ -1,11 +1,12 @@
 import java.io.File;
 import java.io.FileWriter;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Scanner;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Iterator;
 
 public class Main {
     static File currentDirectory = new File(System.getProperty("user.dir")).getAbsoluteFile();
@@ -35,17 +36,20 @@ public class Main {
         String value;
         boolean isRedirectOperator;
         boolean isBackgroundOperator;
+        boolean isPipeOperator;
 
         Token(String value, boolean isRedirectOperator) {
             this.value = value;
             this.isRedirectOperator = isRedirectOperator;
             this.isBackgroundOperator = false;
+            this.isPipeOperator = false;
         }
 
-        Token(String value, boolean isRedirectOperator, boolean isBackgroundOperator) {
+        Token(String value, boolean isRedirectOperator, boolean isBackgroundOperator, boolean isPipeOperator) {
             this.value = value;
             this.isRedirectOperator = isRedirectOperator;
             this.isBackgroundOperator = isBackgroundOperator;
+            this.isPipeOperator = isPipeOperator;
         }
     }
 
@@ -69,12 +73,18 @@ public class Main {
 
             String input = sc.nextLine();
 
-            CommandLine commandLine = parseCommandLine(input);
+            List<CommandLine> pipeline = parsePipeline(input);
 
-            if (commandLine.args.isEmpty()) {
+            if (pipeline.isEmpty() || pipeline.get(0).args.isEmpty()) {
                 continue;
             }
 
+            if (pipeline.size() > 1) {
+                runPipeline(pipeline, input.trim());
+                continue;
+            }
+
+            CommandLine commandLine = pipeline.get(0);
             String cmd = commandLine.args.get(0);
 
             File stdoutRedirectFile = commandLine.stdoutFile == null
@@ -144,10 +154,7 @@ public class Main {
 
                 if (commandLine.background) {
                     int jobNumber = nextJobNumber++;
-                    String commandText = input.trim();
-
-                    jobs.add(new Job(jobNumber, process.pid(), commandText, process));
-
+                    jobs.add(new Job(jobNumber, process.pid(), input.trim(), process));
                     System.out.println("[" + jobNumber + "] " + process.pid());
                 } else {
                     if (stdoutRedirectFile == null) {
@@ -168,6 +175,117 @@ public class Main {
         }
 
         sc.close();
+    }
+
+    public static void runPipeline(List<CommandLine> pipeline, String originalInput) throws Exception {
+        List<ProcessBuilder> builders = new ArrayList<>();
+
+        boolean background = pipeline.get(pipeline.size() - 1).background;
+
+        for (int i = 0; i < pipeline.size(); i++) {
+            CommandLine commandLine = pipeline.get(i);
+
+            if (commandLine.args.isEmpty()) {
+                return;
+            }
+
+            String cmd = commandLine.args.get(0);
+
+            if (getExecutable(cmd) == null && !commands.contains(cmd)) {
+                printStderr(cmd + ": command not found", null, false);
+                return;
+            }
+
+            ProcessBuilder processBuilder = new ProcessBuilder(commandLine.args);
+            processBuilder.directory(currentDirectory);
+
+            File stderrRedirectFile = commandLine.stderrFile == null
+                    ? null
+                    : resolvePath(commandLine.stderrFile);
+
+            if (stderrRedirectFile != null) {
+                if (commandLine.stderrAppend) {
+                    processBuilder.redirectError(ProcessBuilder.Redirect.appendTo(stderrRedirectFile));
+                } else {
+                    processBuilder.redirectError(stderrRedirectFile);
+                }
+            } else if (background) {
+                processBuilder.redirectError(ProcessBuilder.Redirect.INHERIT);
+            }
+
+            if (i == pipeline.size() - 1) {
+                File stdoutRedirectFile = commandLine.stdoutFile == null
+                        ? null
+                        : resolvePath(commandLine.stdoutFile);
+
+                if (stdoutRedirectFile != null) {
+                    if (commandLine.stdoutAppend) {
+                        processBuilder.redirectOutput(ProcessBuilder.Redirect.appendTo(stdoutRedirectFile));
+                    } else {
+                        processBuilder.redirectOutput(stdoutRedirectFile);
+                    }
+                } else if (background) {
+                    processBuilder.redirectOutput(ProcessBuilder.Redirect.INHERIT);
+                }
+            }
+
+            builders.add(processBuilder);
+        }
+
+        List<Process> processes = ProcessBuilder.startPipeline(builders);
+        Process lastProcess = processes.get(processes.size() - 1);
+
+        if (background) {
+            int jobNumber = nextJobNumber++;
+            jobs.add(new Job(jobNumber, lastProcess.pid(), originalInput, lastProcess));
+            System.out.println("[" + jobNumber + "] " + lastProcess.pid());
+            return;
+        }
+
+        List<Thread> errorThreads = new ArrayList<>();
+
+        for (int i = 0; i < processes.size(); i++) {
+            if (pipeline.get(i).stderrFile == null) {
+                Thread thread = transferAsync(processes.get(i).getErrorStream(), System.err);
+                errorThreads.add(thread);
+            }
+        }
+
+        CommandLine lastCommand = pipeline.get(pipeline.size() - 1);
+
+        if (lastCommand.stdoutFile == null) {
+            lastProcess.getInputStream().transferTo(System.out);
+        }
+
+        lastProcess.waitFor();
+
+        for (int i = 0; i < processes.size() - 1; i++) {
+            Process process = processes.get(i);
+
+            if (process.isAlive()) {
+                process.destroy();
+            }
+        }
+
+        for (Process process : processes) {
+            process.waitFor();
+        }
+
+        for (Thread thread : errorThreads) {
+            thread.join();
+        }
+    }
+
+    public static Thread transferAsync(InputStream inputStream, OutputStream outputStream) {
+        Thread thread = new Thread(() -> {
+            try {
+                inputStream.transferTo(outputStream);
+            } catch (Exception ignored) {
+            }
+        });
+
+        thread.start();
+        return thread;
     }
 
     public static void printJobs(File stdoutRedirectFile, boolean stdoutAppend) throws Exception {
@@ -196,7 +314,7 @@ public class Main {
             boolean isDone = !job.process.isAlive();
 
             if (isDone) {
-                job.process.waitFor(); // reap the finished process
+                job.process.waitFor();
                 doneJobs.add(job);
             }
 
@@ -242,23 +360,45 @@ public class Main {
         return trimmed;
     }
 
-    public static CommandLine parseCommandLine(String input) {
+    public static List<CommandLine> parsePipeline(String input) {
         List<Token> tokens = tokenize(input);
 
-        CommandLine commandLine = new CommandLine();
+        boolean background = false;
 
-        int end = tokens.size();
-
-        if (end > 0 && tokens.get(end - 1).isBackgroundOperator) {
-            commandLine.background = true;
-            end--;
+        if (!tokens.isEmpty() && tokens.get(tokens.size() - 1).isBackgroundOperator) {
+            background = true;
+            tokens.remove(tokens.size() - 1);
         }
 
-        for (int i = 0; i < end; i++) {
+        List<CommandLine> pipeline = new ArrayList<>();
+        List<Token> currentCommandTokens = new ArrayList<>();
+
+        for (Token token : tokens) {
+            if (token.isPipeOperator) {
+                CommandLine commandLine = parseCommandTokens(currentCommandTokens);
+                commandLine.background = background;
+                pipeline.add(commandLine);
+                currentCommandTokens.clear();
+            } else {
+                currentCommandTokens.add(token);
+            }
+        }
+
+        CommandLine commandLine = parseCommandTokens(currentCommandTokens);
+        commandLine.background = background;
+        pipeline.add(commandLine);
+
+        return pipeline;
+    }
+
+    public static CommandLine parseCommandTokens(List<Token> tokens) {
+        CommandLine commandLine = new CommandLine();
+
+        for (int i = 0; i < tokens.size(); i++) {
             Token token = tokens.get(i);
 
             if (token.isRedirectOperator) {
-                if (i + 1 < end) {
+                if (i + 1 < tokens.size()) {
                     if (token.value.equals(">") || token.value.equals("1>")) {
                         commandLine.stdoutFile = tokens.get(i + 1).value;
                         commandLine.stdoutAppend = false;
@@ -328,6 +468,15 @@ public class Main {
                 insideDoubleQuote = !insideDoubleQuote;
                 argStarted = true;
 
+            } else if (ch == '|' && !insideSingleQuote && !insideDoubleQuote) {
+                if (argStarted) {
+                    tokens.add(new Token(current.toString(), false));
+                    current.setLength(0);
+                    argStarted = false;
+                }
+
+                tokens.add(new Token("|", false, false, true));
+
             } else if (ch == '&' && !insideSingleQuote && !insideDoubleQuote) {
                 if (argStarted) {
                     tokens.add(new Token(current.toString(), false));
@@ -335,7 +484,7 @@ public class Main {
                     argStarted = false;
                 }
 
-                tokens.add(new Token("&", false, true));
+                tokens.add(new Token("&", false, true, false));
 
             } else if (ch == '>' && !insideSingleQuote && !insideDoubleQuote) {
                 boolean isAppend = i + 1 < input.length() && input.charAt(i + 1) == '>';
