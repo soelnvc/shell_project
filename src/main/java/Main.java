@@ -7,8 +7,6 @@ public class Main {
     public static void main(String[] args) throws Exception {
         Scanner sc = new Scanner(System.in);
 
-        HashSet<String> commands = new HashSet<>(Arrays.asList("exit", "echo", "type", "pwd"));
-
         while (true) {
             System.out.print("$ ");
 
@@ -39,7 +37,7 @@ public class Main {
     }
 
     public static String type(String cmd) {
-        HashSet<String> commands = new HashSet<>(Arrays.asList("exit", "echo", "type"));
+        HashSet<String> commands = new HashSet<>(Arrays.asList("exit", "echo", "type", "pwd"));
 
         String path = System.getenv("PATH");
         String[] pathDir = path.split(":");
