@@ -71,15 +71,30 @@ public class Main {
         for (int i = 0; i < input.length(); i++) {
             char ch = input.charAt(i);
 
-            if (ch == '\\' && !insideSingleQuote && !insideDoubleQuote) {
+            if (ch == '\\' && insideDoubleQuote) {
+                if (i + 1 < input.length()) {
+                    char next = input.charAt(i + 1);
+
+                    if (next == '"' || next == '\\') {
+                        current.append(next);
+                        i++;
+                    } else {
+                        current.append(ch);
+                    }
+                } else {
+                    current.append(ch);
+                }
+
+                argStarted = true;
+            } else if (ch == '\\' && !insideSingleQuote && !insideDoubleQuote) {
                 if (i + 1 < input.length()) {
                     current.append(input.charAt(i + 1));
-                    argStarted = true;
                     i++;
                 } else {
                     current.append(ch);
-                    argStarted = true;
                 }
+
+                argStarted = true;
             } else if (ch == '\'' && !insideDoubleQuote) {
                 insideSingleQuote = !insideSingleQuote;
                 argStarted = true;
