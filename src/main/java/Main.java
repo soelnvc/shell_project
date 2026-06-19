@@ -1,4 +1,5 @@
 import java.io.File;
+import java.io.FileWriter;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Scanner;
@@ -12,6 +13,21 @@ public class Main {
             Arrays.asList("exit", "echo", "type", "pwd", "cd")
     );
 
+    static class Token {
+        String value;
+        boolean isRedirectOperator;
+
+        Token(String value, boolean isRedirectOperator) {
+            this.value = value;
+            this.isRedirectOperator = isRedirectOperator;
+        }
+    }
+
+    static class CommandLine {
+        List<String> args = new ArrayList<>();
+        String stdoutFile = null;
+    }
+
     public static void main(String[] args) throws Exception {
         Scanner sc = new Scanner(System.in);
 
@@ -20,37 +36,50 @@ public class Main {
 
             String input = sc.nextLine();
 
-            List<String> parts = parseInput(input);
+            CommandLine commandLine = parseCommandLine(input);
 
-            if (parts.isEmpty()) {
+            if (commandLine.args.isEmpty()) {
                 continue;
             }
 
-            String cmd = parts.get(0);
+            String cmd = commandLine.args.get(0);
+            File stdoutRedirectFile = commandLine.stdoutFile == null
+                    ? null
+                    : resolvePath(commandLine.stdoutFile);
 
             if (cmd.equals("exit")) {
                 break;
             } else if (cmd.equals("type")) {
-                String arg = parts.size() > 1 ? parts.get(1) : "";
-                System.out.println(type(arg));
+                String arg = commandLine.args.size() > 1 ? commandLine.args.get(1) : "";
+                printStdout(type(arg), stdoutRedirectFile);
             } else if (cmd.equals("echo")) {
-                if (parts.size() > 1) {
-                    System.out.println(String.join(" ", parts.subList(1, parts.size())));
-                } else {
-                    System.out.println();
+                String output = "";
+
+                if (commandLine.args.size() > 1) {
+                    output = String.join(" ", commandLine.args.subList(1, commandLine.args.size()));
                 }
+
+                printStdout(output, stdoutRedirectFile);
             } else if (cmd.equals("pwd")) {
-                System.out.println(pwd());
+                printStdout(pwd(), stdoutRedirectFile);
             } else if (cmd.equals("cd")) {
-                String arg = parts.size() > 1 ? parts.get(1) : "";
+                String arg = commandLine.args.size() > 1 ? commandLine.args.get(1) : "";
                 cd(arg);
             } else if (getExecutable(cmd) != null) {
-                ProcessBuilder processBuilder = new ProcessBuilder(parts);
+                ProcessBuilder processBuilder = new ProcessBuilder(commandLine.args);
                 processBuilder.directory(currentDirectory);
-                processBuilder.redirectErrorStream(true);
+
+                if (stdoutRedirectFile != null) {
+                    processBuilder.redirectOutput(stdoutRedirectFile);
+                }
 
                 Process process = processBuilder.start();
-                process.getInputStream().transferTo(System.out);
+
+                if (stdoutRedirectFile == null) {
+                    process.getInputStream().transferTo(System.out);
+                }
+
+                process.getErrorStream().transferTo(System.err);
                 process.waitFor();
             } else {
                 System.out.println(cmd + ": command not found");
@@ -60,8 +89,29 @@ public class Main {
         sc.close();
     }
 
-    public static List<String> parseInput(String input) {
-        List<String> args = new ArrayList<>();
+    public static CommandLine parseCommandLine(String input) {
+        List<Token> tokens = tokenize(input);
+
+        CommandLine commandLine = new CommandLine();
+
+        for (int i = 0; i < tokens.size(); i++) {
+            Token token = tokens.get(i);
+
+            if (token.isRedirectOperator) {
+                if (i + 1 < tokens.size()) {
+                    commandLine.stdoutFile = tokens.get(i + 1).value;
+                    i++;
+                }
+            } else {
+                commandLine.args.add(token.value);
+            }
+        }
+
+        return commandLine;
+    }
+
+    public static List<Token> tokenize(String input) {
+        List<Token> tokens = new ArrayList<>();
         StringBuilder current = new StringBuilder();
 
         boolean insideSingleQuote = false;
@@ -101,9 +151,23 @@ public class Main {
             } else if (ch == '"' && !insideSingleQuote) {
                 insideDoubleQuote = !insideDoubleQuote;
                 argStarted = true;
+            } else if (ch == '>' && !insideSingleQuote && !insideDoubleQuote) {
+                if (argStarted && current.toString().equals("1")) {
+                    current.setLength(0);
+                    argStarted = false;
+                    tokens.add(new Token("1>", true));
+                } else {
+                    if (argStarted) {
+                        tokens.add(new Token(current.toString(), false));
+                        current.setLength(0);
+                        argStarted = false;
+                    }
+
+                    tokens.add(new Token(">", true));
+                }
             } else if (Character.isWhitespace(ch) && !insideSingleQuote && !insideDoubleQuote) {
                 if (argStarted) {
-                    args.add(current.toString());
+                    tokens.add(new Token(current.toString(), false));
                     current.setLength(0);
                     argStarted = false;
                 }
@@ -114,10 +178,29 @@ public class Main {
         }
 
         if (argStarted) {
-            args.add(current.toString());
+            tokens.add(new Token(current.toString(), false));
         }
 
-        return args;
+        return tokens;
+    }
+
+    public static void printStdout(String text, File redirectFile) throws Exception {
+        if (redirectFile == null) {
+            System.out.println(text);
+        } else {
+            FileWriter writer = new FileWriter(redirectFile, false);
+            writer.write(text);
+            writer.write(System.lineSeparator());
+            writer.close();
+        }
+    }
+
+    public static File resolvePath(String path) {
+        if (path.startsWith("/")) {
+            return new File(path);
+        }
+
+        return new File(currentDirectory, path);
     }
 
     public static String pwd() {
