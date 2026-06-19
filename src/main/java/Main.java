@@ -65,15 +65,19 @@ public class Main {
         StringBuilder current = new StringBuilder();
 
         boolean insideSingleQuote = false;
+        boolean insideDoubleQuote = false;
         boolean argStarted = false;
 
         for (int i = 0; i < input.length(); i++) {
             char ch = input.charAt(i);
 
-            if (ch == '\'') {
+            if (ch == '\'' && !insideDoubleQuote) {
                 insideSingleQuote = !insideSingleQuote;
                 argStarted = true;
-            } else if (Character.isWhitespace(ch) && !insideSingleQuote) {
+            } else if (ch == '"' && !insideSingleQuote) {
+                insideDoubleQuote = !insideDoubleQuote;
+                argStarted = true;
+            } else if (Character.isWhitespace(ch) && !insideSingleQuote && !insideDoubleQuote) {
                 if (argStarted) {
                     args.add(current.toString());
                     current.setLength(0);
