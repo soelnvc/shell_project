@@ -2,6 +2,8 @@ import java.io.File;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Scanner;
+import java.util.ArrayList;
+import java.util.List;
 
 public class Main {
     static File currentDirectory = new File(System.getProperty("user.dir")).getAbsoluteFile();
@@ -18,31 +20,31 @@ public class Main {
 
             String input = sc.nextLine();
 
-            if (input.trim().isEmpty()) {
+            List<String> parts = parseInput(input);
+
+            if (parts.isEmpty()) {
                 continue;
             }
 
-            String cmd = input.indexOf(" ") == -1
-                    ? input
-                    : input.substring(0, input.indexOf(" "));
-
-            String rem = input.indexOf(" ") == -1
-                    ? ""
-                    : input.substring(input.indexOf(" ") + 1);
+            String cmd = parts.get(0);
 
             if (cmd.equals("exit")) {
                 break;
             } else if (cmd.equals("type")) {
-                System.out.println(type(rem));
+                String arg = parts.size() > 1 ? parts.get(1) : "";
+                System.out.println(type(arg));
             } else if (cmd.equals("echo")) {
-                System.out.println(rem);
+                if (parts.size() > 1) {
+                    System.out.println(String.join(" ", parts.subList(1, parts.size())));
+                } else {
+                    System.out.println();
+                }
             } else if (cmd.equals("pwd")) {
                 System.out.println(pwd());
             } else if (cmd.equals("cd")) {
-                cd(rem);
+                String arg = parts.size() > 1 ? parts.get(1) : "";
+                cd(arg);
             } else if (getExecutable(cmd) != null) {
-                String[] parts = input.split(" ");
-
                 ProcessBuilder processBuilder = new ProcessBuilder(parts);
                 processBuilder.directory(currentDirectory);
                 processBuilder.redirectErrorStream(true);
@@ -56,6 +58,38 @@ public class Main {
         }
 
         sc.close();
+    }
+
+    public static List<String> parseInput(String input) {
+        List<String> args = new ArrayList<>();
+        StringBuilder current = new StringBuilder();
+
+        boolean insideSingleQuote = false;
+        boolean argStarted = false;
+
+        for (int i = 0; i < input.length(); i++) {
+            char ch = input.charAt(i);
+
+            if (ch == '\'') {
+                insideSingleQuote = !insideSingleQuote;
+                argStarted = true;
+            } else if (Character.isWhitespace(ch) && !insideSingleQuote) {
+                if (argStarted) {
+                    args.add(current.toString());
+                    current.setLength(0);
+                    argStarted = false;
+                }
+            } else {
+                current.append(ch);
+                argStarted = true;
+            }
+        }
+
+        if (argStarted) {
+            args.add(current.toString());
+        }
+
+        return args;
     }
 
     public static String pwd() {
