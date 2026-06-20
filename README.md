@@ -1,34 +1,37 @@
-[![progress-banner](https://backend.codecrafters.io/progress/shell/4fb1f5de-e152-4fa1-b805-cc31a3365734)](https://app.codecrafters.io/users/soelnvc?r=2qF)
+# Java POSIX Shell
 
-This is a starting point for Java solutions to the
-["Build Your Own Shell" Challenge](https://app.codecrafters.io/courses/shell/overview).
+A custom, robust shell environment built from scratch in Java. This project implements core operating system interactions, process management, and a custom command-line parser without relying on external libraries. 
 
-In this challenge, you'll build your own POSIX compliant shell that's capable of
-interpreting shell commands, running external programs and builtin commands like
-cd, pwd, echo and more. Along the way, you'll learn about shell command parsing,
-REPLs, builtin commands, and more.
+It was developed to deeply understand how shells manage standard streams, handle concurrent processes, and interact directly with the underlying host OS.
 
-**Note**: If you're viewing this repo on GitHub, head over to
-[codecrafters.io](https://codecrafters.io) to try the challenge.
+## ⚙️ Core Engineering Features
 
-# Passing the first stage
+* **Custom Lexer & Tokenizer:** Parses user input with full support for single quotes (`'`), double quotes (`"`), and escape characters (`\`), ensuring arguments are passed exactly as intended.
+* **Pipeline Execution (`|`):** Implements multi-stage command piping. Leverages `ProcessBuilder.startPipeline` alongside asynchronous stream handling to prevent deadlocks during complex I/O chaining.
+* **Process Management & Background Jobs (`&`):** Tracks background processes by assigning Job Numbers and PIDs. Includes a dynamic reaping mechanism to gracefully clean up and report on terminated background tasks.
+* **I/O Redirection:** Granular control over standard output and error streams. Supports overriding (`>`) and appending (`>>`) for both `stdout` (`1>`, `1>>`) and `stderr` (`2>`, `2>>`).
+* **Built-in Commands:** Native implementations of essential shell commands: `cd`, `pwd`, `echo`, `type`, `jobs`, and `exit`.
 
-The entry point for your `shell` implementation is in `src/main/java/Main.java`.
-Study and uncomment the relevant code, then run the command below to execute the
-tests on our servers:
+## 🛠️ Technical Architecture
 
-```sh
-codecrafters submit
-```
+The architecture is built around a continuous REPL (Read-Eval-Print Loop) that evaluates input through a multi-stage pipeline:
 
-Time to move on to the next stage!
+1.  **Tokenization:** The raw input string is broken down into a `List<Token>`, identifying regular arguments versus control operators (redirects, pipes, background flags).
+2.  **Command Parsing:** Tokens are grouped into `CommandLine` objects, representing individual stages of a pipeline alongside their specific I/O routing requirements.
+3.  **Execution:**
+    * *Built-ins* are intercepted and executed within the main JVM thread to manipulate shell state (e.g., changing the `currentDirectory`).
+    * *External Commands* are resolved against the system `$PATH` and launched via `ProcessBuilder`.
+4.  **Asynchronous Stream Transfer:** For non-piped commands or mixed built-in/external pipelines, background threads manage `InputStream.transferTo(OutputStream)` to ensure non-blocking I/O flow.
 
-# Stage 2 & beyond
+## 🚀 Getting Started
 
-Note: This section is for stages 2 and beyond.
+### Prerequisites
+* Java 21 or higher (Uses preview features and native access)
+* Maven (`mvn`)
 
-1. Ensure you have `mvn` installed locally
-1. Run `./your_program.sh` to run your program, which is implemented in
-   `src/main/java/Main.java`.
-1. Run `codecrafters submit` to submit your solution to CodeCrafters. Test
-   output will be streamed to your terminal.
+### Build & Run Locally
+
+1. **Compile the project:**
+   The repository includes a helper script to build the target jar using Maven.
+   ```bash
+   ./.codecrafters/compile.sh
